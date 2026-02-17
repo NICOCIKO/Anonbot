@@ -33,14 +33,14 @@ def start_handler(message):
     bot_username = bot.get_me().username
     personal_link = f"https://t.me/{bot_username}?start={user_id}"
 
-    # Текст ссылки как цитата и жирные элементы
+    # Текст ссылки как цитата с серым фоном (HTML <pre>)
     text = (
-        "*Начните получать анонимные вопросы прямо сейчас!*\n\n"
-        f"Ваша ссылка:\n`{personal_link}`\n\n"
-        "*Разместите эту ссылку ☝️ в описании своего профиля Telegram, TikTok, Instagram (stories), чтобы вам могли написать 💬*"
-    )
+        "<b>Начните получать анонимные вопросы прямо сейчас!</b>\n\n"
+        "Ваша ссылка:\n<pre>{}</pre>\n\n"
+        "<b>Разместите эту ссылку ☝️ в описании своего профиля Telegram, TikTok, Instagram (stories), чтобы вам могли написать 💬</b>"
+    ).format(personal_link)
 
-    bot.send_message(message.chat.id, text, parse_mode="Markdown")
+    bot.send_message(message.chat.id, text, parse_mode="HTML")
 
 # ================= RECEIVE MESSAGE =================
 @bot.message_handler(func=lambda m: m.from_user.id in waiting_for_message)
