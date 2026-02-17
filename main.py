@@ -33,25 +33,14 @@ def start_handler(message):
     bot_username = bot.get_me().username
     personal_link = f"https://t.me/{bot_username}?start={user_id}"
 
-    # Инлайн кнопка для копирования ссылки
-    markup = types.InlineKeyboardMarkup()
-    copy_btn = types.InlineKeyboardButton("📋 Скопировать ссылку", callback_data=f"copy_{user_id}")
-    markup.add(copy_btn)
-
+    # Сообщение с кликабельной ссылкой, жирный текст
     text = (
         "<b>Начните получать анонимные вопросы прямо сейчас!</b>\n\n"
         f"Ваша персональная ссылка: {personal_link}\n\n"
         "<b>Разместите эту ссылку ☝️ в описании своего профиля Telegram, TikTok, Instagram (stories), чтобы вам могли написать 💬</b>"
     )
 
-    bot.send_message(message.chat.id, text, parse_mode="HTML", reply_markup=markup)
-
-# ================= COPY BUTTON =================
-@bot.callback_query_handler(func=lambda call: call.data.startswith("copy_"))
-def copy_link(call):
-    user_id = call.data.split("_")[1]
-    bot.send_message(call.from_user.id, f"Вот твоя ссылка (можно выделить как цитату):\n`https://t.me/{bot.get_me().username}?start={user_id}`", parse_mode="Markdown")
-    bot.answer_callback_query(call.id, "Ссылка отправлена!")
+    bot.send_message(message.chat.id, text, parse_mode="HTML")
 
 # ================= RECEIVE MESSAGE =================
 @bot.message_handler(func=lambda m: m.from_user.id in waiting_for_message)
