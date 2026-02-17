@@ -2,13 +2,18 @@ import os
 import telebot
 from telebot import types
 
-# ⚡ Вставь сюда свой токен
-TOKEN = os.getenv("TOKEN")  # или вставь прямо "ВАШ_ТОКЕН"
-ADMIN_IDS = 7924774037, 483786028       # твой Telegram ID
+TOKEN = os.getenv("TOKEN")  # или вставь прямо токен
+ADMINS = [483786028, 7924774037]  # два админа
 
 bot = telebot.TeleBot(TOKEN)
 
-# Временные словари для хранения состояния
+# Проверим токен и получим username бота один раз
+try:
+    BOT_USERNAME = bot.get_me().username
+except Exception as e:
+    print("Ошибка при получении информации о боте:", e)
+    BOT_USERNAME = "bot"
+
 waiting_for_message = {}
 reply_to_user = {}
 
@@ -17,7 +22,6 @@ reply_to_user = {}
 def start_handler(message):
     args = message.text.split()
 
-    # Если пользователь открыл персональную ссылку
     if len(args) > 1:
         target_id = args[1]
 
@@ -29,10 +33,8 @@ def start_handler(message):
         bot.send_message(message.chat.id, "✍️ Напиши анонимное сообщение:")
         return
 
-    # Обычный старт
     user_id = message.from_user.id
-    bot_username = bot.get_me().username
-    personal_link = f"https://t.me/{bot_username}?start={user_id}"
+    personal_link = f"https://t.me/{BOT_USERNAME}?start={user_id}"
 
     bot.send_message(
         message.chat.id,
@@ -47,29 +49,34 @@ def receive_message(message):
     target_id = waiting_for_message.pop(sender.id)
 
     markup = types.InlineKeyboardMarkup()
-    btn = types.InlineKeyboardButton(
-        "Ответить", callback_data=f"reply_{sender.id}"
-    )
+    btn = types.InlineKeyboardButton("Ответить", callback_data=f"reply_{sender.id}")
     markup.add(btn)
 
-    # Отправка владельцу ссылки (анонимно)
-    bot.send_message(
-        target_id,
-        f"📩 Анонимное сообщение:\n\n{message.text}",
-        reply_markup=markup
-    )
+    # Отправка анонимного сообщения владельцу ссылки
+    try:
+        bot.send_message(
+            target_id,
+            f"📩 Анонимное сообщение:\n\n{message.text}",
+            reply_markup=markup
+        )
+    except Exception as e:
+        print(f"Ошибка при отправке владельцу ссылки: {e}")
 
-    # Копия админу с раскрытием отправителя
-    bot.send_message(
-        ADMIN_IDS,
-        f"👀 Новое сообщение\n\n"
-        f"Кому: {target_id}\n"
-        f"Отправитель:\n"
-        f"ID: {sender.id}\n"
-        f"Username: @{sender.username if sender.username else 'нет'}\n"
-        f"Имя: {sender.first_name}\n\n"
-        f"Текст:\n{message.text}"
-    )
+    # Отправка копий всем админам
+    for admin in ADMINS:
+        try:
+            bot.send_message(
+                admin,
+                f"👀 Новое сообщение\n\n"
+                f"Кому: {target_id}\n"
+                f"Отправитель:\n"
+                f"ID: {sender.id}\n"
+                f"Username: @{sender.username if sender.username else 'нет'}\n"
+                f"Имя: {sender.first_name}\n\n"
+                f"Текст:\n{message.text}"
+            )
+        except Exception as e:
+            print(f"Ошибка при отправке админу {admin}: {e}")
 
     bot.send_message(message.chat.id, "✅ Сообщение отправлено анонимно!")
 
@@ -78,7 +85,7 @@ def receive_message(message):
 def reply_callback(call):
     sender_id = call.data.split("_")[1]
     reply_to_user[call.from_user.id] = sender_id
-    bot.send_message(call.from_user.id, "✍️ Напиши ответ:")
+    bot.send_message(call.from_user.id, "✍️ Напиши ответ пользователю:")
     bot.answer_callback_query(call.id)
 
 # ================= SEND REPLY =================
@@ -86,13 +93,16 @@ def reply_callback(call):
 def send_reply(message):
     target_id = reply_to_user.pop(message.from_user.id)
 
-    bot.send_message(
-        target_id,
-        f"📩 Тебе ответили:\n\n{message.text}"
-    )
+    try:
+        bot.send_message(
+            target_id,
+            f"📩 Админ ответил:\n\n{message.text}"
+        )
+    except Exception as e:
+        print(f"Ошибка при отправке ответа пользователю: {e}")
 
-    bot.send_message(message.chat.id, "✅ Ответ отправлен!")
+    bot.send_message(message.chat.id, "✅ Ответ отправлен пользователю!")
 
 # ================= RUN =================
-print("Бот запущен через polling...")
+print("Бот для анонимных вопросов с двумя админами запущен...")
 bot.infinity_polling()
