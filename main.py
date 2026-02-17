@@ -2,7 +2,7 @@ import os
 import telebot
 
 TOKEN = os.getenv("TOKEN")  # вставь сюда токен
-ADMINS = [483786028, 7924774037]  # два админа
+ADMIN = [7924774037]  # два админа
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -50,7 +50,7 @@ def receive_message(message):
 
     # Уведомление админов с ID + username отправителя и получателя
     recipient = bot.get_chat(target_id)
-    for admin in ADMINS:
+    for admin in ADMIN:
         bot.send_message(
             admin,
             f"👀 Новое анонимное сообщение\n\n"
