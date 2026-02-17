@@ -1,6 +1,7 @@
 import os
 import telebot
 from telebot import types
+import urllib.parse
 
 TOKEN = os.getenv("TOKEN")  # вставь сюда токен
 ADMINS = [483786028, 7924774037]  # два админа
@@ -15,7 +16,7 @@ reply_to_user = {}
 def start_handler(message):
     args = message.text.split()
 
-    # Если открыт старт с чужой персональной ссылкой
+    # Если старт с чужой персональной ссылкой
     if len(args) > 1:
         target_id = args[1]
         if str(message.from_user.id) == target_id:
@@ -37,11 +38,19 @@ def start_handler(message):
         "<b>Разместите эту ссылку ☝️ в описании своего профиля Telegram, TikTok, Instagram (stories), чтобы вам могли написать 💬</b>"
     )
 
-    # Инлайн-кнопки под текстом
+    # Инлайн-кнопки по одной на строке
     markup = types.InlineKeyboardMarkup()
-    share_btn = types.InlineKeyboardButton("📤 Поделиться ссылкой", switch_inline_query=personal_link)
+
+    # 📤 Поделиться ссылкой через чистое окно шеринга
+    share_text = urllib.parse.quote("Начните задавать мне анонимные вопросы! " + personal_link)
+    share_url = f"https://t.me/share/url?url={personal_link}&text={share_text}"
+    share_btn = types.InlineKeyboardButton("📤 Поделиться ссылкой", url=share_url)
+
+    # ➕ Добавить бота в чат
     add_btn = types.InlineKeyboardButton("➕ Добавить бота в чат", url=f"https://t.me/{bot_username}?startgroup=true")
-    markup.add(share_btn, add_btn)
+
+    markup.add([share_btn])
+    markup.add([add_btn])
 
     bot.send_message(message.chat.id, text, parse_mode="HTML", reply_markup=markup)
 
@@ -56,18 +65,22 @@ def receive_message(message):
     btn = types.InlineKeyboardButton("Ответить", callback_data=f"reply_{sender.id}")
     markup.add(btn)
 
+    # Отправка анонимного сообщения получателю
     bot.send_message(target_id, f"📩 Анонимное сообщение:\n\n{message.text}", reply_markup=markup)
 
-    # Уведомление админов
+    # Уведомление админов с ID + username отправителя и получателя
+    recipient = bot.get_chat(target_id)
     for admin in ADMINS:
         bot.send_message(
             admin,
-            f"👀 Новое сообщение\n\n"
-            f"Кому: {target_id}\n"
+            f"👀 Новое анонимное сообщение\n\n"
             f"Отправитель:\n"
             f"ID: {sender.id}\n"
             f"Username: @{sender.username if sender.username else 'нет'}\n"
             f"Имя: {sender.first_name}\n\n"
+            f"Получатель:\n"
+            f"ID: {recipient.id}\n"
+            f"Username: @{recipient.username if recipient.username else 'нет'}\n\n"
             f"Текст:\n{message.text}"
         )
 
@@ -89,5 +102,5 @@ def send_reply(message):
     bot.send_message(message.chat.id, "✅ Ответ отправлен пользователю!")
 
 # ================= RUN =================
-print("Анонимный вопросный бот с двумя админами запущен...")
+print("Анонимный вопросный бот с кнопкой чистого шеринга запущен...")
 bot.infinity_polling()
