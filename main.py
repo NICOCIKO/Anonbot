@@ -4,7 +4,7 @@ from telebot import types
 
 # ⚡ Вставь сюда свой токен
 TOKEN = os.getenv("TOKEN")  # или вставь прямо "ВАШ_ТОКЕН"
-ADMIN_ID = 7924774037       # твой Telegram ID
+ADMIN_IDS = 7924774037, 483786028       # твой Telegram ID
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -61,7 +61,7 @@ def receive_message(message):
 
     # Копия админу с раскрытием отправителя
     bot.send_message(
-        ADMIN_ID,
+        ADMIN_IDS,
         f"👀 Новое сообщение\n\n"
         f"Кому: {target_id}\n"
         f"Отправитель:\n"
