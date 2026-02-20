@@ -1,71 +1,113 @@
-import os
 import telebot
+from telebot import types
 
-TOKEN = os.getenv("TOKEN")  # вставь сюда токен
-ADMINS = [2037648258, 7924774037]  # два админа
+TOKEN = "ТВОЙ_ТОКЕН_СЮДА"
 
 bot = telebot.TeleBot(TOKEN)
 
 waiting_for_message = {}
-reply_to_user = {}
+
+# ================= КНОПКА ОТМЕНЫ =================
+def cancel_keyboard():
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add("❌ Отменить")
+    return kb
+
 
 # ================= START =================
 @bot.message_handler(commands=['start'])
 def start_handler(message):
     args = message.text.split()
-
-    # Если старт с чужой персональной ссылкой
-    if len(args) > 1:
-        target_id = args[1]
-        if str(message.from_user.id) == target_id:
-            bot.send_message(message.chat.id, "❌ Нельзя написать самому себе.")
-            return
-        waiting_for_message[message.from_user.id] = target_id
-        bot.send_message(message.chat.id, "✍️ Напиши анонимное сообщение:")
-        return
-
-    # Обычный старт
     user_id = message.from_user.id
     bot_username = bot.get_me().username
+
+    # Если зашли по чужой ссылке
+    if len(args) > 1:
+        target_id = args[1]
+
+        if str(user_id) == target_id:
+            bot.send_message(message.chat.id, "❌ Нельзя написать самому себе.")
+            return
+
+        waiting_for_message[user_id] = target_id
+
+        bot.send_message(
+            message.chat.id,
+            "🚀 Здесь можно отправить анонимное сообщение человеку.\n\n"
+            "✍️ Напишите сюда всё, что хотите ему передать,\n"
+            "и через несколько секунд он получит ваше сообщение,\n"
+            "но не будет знать от кого 👀\n\n"
+            "Отправить можно фото, видео, текст,\n"
+            "🎤 голосовые, 🎥 видеосообщения (кружки), ✨ стикеры.",
+            reply_markup=cancel_keyboard()
+        )
+        return
+
+    # Если обычный /start
     personal_link = f"https://t.me/{bot_username}?start={user_id}"
 
-    # Текст сообщения (жирный HTML)
-    text = (
-        "<b>Начните получать анонимные вопросы прямо сейчас!</b>\n\n"
-        f"Ваша персональная ссылка:\n {personal_link}\n\n"
-        "<b>Разместите эту ссылку ☝️ в описании своего профиля Telegram, TikTok, Instagram (stories), чтобы вам могли написать 💬</b>"
+    bot.send_message(
+        message.chat.id,
+        "Начните получать анонимные вопросы прямо сейчас!\n\n"
+        f"👉 https://t.me/{bot_username}?start={user_id}\n\n"
+        "Разместите эту ссылку ☝️ в описании своего профиля "
+        "Telegram, TikTok, Instagram (stories), чтобы вам могли написать 💬"
     )
 
-    # Отправляем без кнопок
-    bot.send_message(message.chat.id, text, parse_mode="HTML")
 
-# ================= RECEIVE MESSAGE =================
-@bot.message_handler(func=lambda m: m.from_user.id in waiting_for_message)
-def receive_message(message):
-    sender = message.from_user
-    target_id = waiting_for_message.pop(sender.id)
+# ================= ОТМЕНА =================
+@bot.message_handler(func=lambda m: m.text == "❌ Отменить")
+def cancel(message):
+    user_id = message.from_user.id
 
-    # Отправка анонимного сообщения получателю
-    bot.send_message(target_id, f"📩 Анонимное сообщение:\n\n{message.text}")
+    if user_id in waiting_for_message:
+        waiting_for_message.pop(user_id)
 
-    # Уведомление админов с ID + username отправителя и получателя
-    recipient = bot.get_chat(target_id)
-    for admin in ADMINS:
-        bot.send_message(
-            admin,
-            f"👀 Новое анонимное сообщение\n\n"
-            f"Отправитель:\n"
-            f"ID: {sender.id}\n"
-            f"Username: @{sender.username if sender.username else 'нет'}\n"
-            f"Имя: {sender.first_name}\n\n"
-            f"Получатель:\n"
-            f"ID: {recipient.id}\n"
-            f"Username: @{recipient.username if recipient.username else 'нет'}\n\n"
-            f"Текст:\n{message.text}"
-        )
+    bot_username = bot.get_me().username
 
-    bot.send_message(message.chat.id, "✅ Сообщение отправлено анонимно!")
+    bot.send_message(
+        message.chat.id,
+        "Начните получать анонимные вопросы прямо сейчас!\n\n"
+        f"👉 https://t.me/{bot_username}?start={user_id}\n\n"
+        "Разместите эту ссылку ☝️ в описании своего профиля "
+        "Telegram, TikTok, Instagram (stories), чтобы вам могли написать 💬",
+        reply_markup=types.ReplyKeyboardRemove()
+    )
 
-# ================= RUN =================
-bot.remove_webhook()  # чтобы не было конфликта polling/webhook
+
+# ================= ПРИЁМ ВСЕХ ТИПОВ СООБЩЕНИЙ =================
+@bot.message_handler(
+    content_types=[
+        'text',
+        'photo',
+        'video',
+        'voice',
+        'video_note',
+        'sticker'
+    ]
+)
+def receive_all(message):
+    user_id = message.from_user.id
+
+    if user_id not in waiting_for_message:
+        return
+
+    target_id = waiting_for_message.pop(user_id)
+
+    # Отправляем полностью анонимно
+    bot.copy_message(
+        chat_id=target_id,
+        from_chat_id=message.chat.id,
+        message_id=message.message_id
+    )
+
+    bot.send_message(
+        message.chat.id,
+        "✅ Сообщение отправлено анонимно!",
+        reply_markup=types.ReplyKeyboardRemove()
+    )
+
+
+# ================= ЗАПУСК =================
+bot.remove_webhook()
 bot.infinity_polling()
