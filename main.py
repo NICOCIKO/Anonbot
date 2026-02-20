@@ -1,9 +1,12 @@
+import os
 import telebot
 from telebot import types
+from flask import Flask, request
 
-TOKEN = "ТВОЙ_ТОКЕН_СЮДА"
-
+TOKEN = os.getenv("TOKEN")
 bot = telebot.TeleBot(TOKEN)
+
+app = Flask(__name__)
 
 waiting_for_message = {}
 
@@ -43,13 +46,13 @@ def start_handler(message):
         )
         return
 
-    # Если обычный /start
+    # Обычный старт
     personal_link = f"https://t.me/{bot_username}?start={user_id}"
 
     bot.send_message(
         message.chat.id,
         "Начните получать анонимные вопросы прямо сейчас!\n\n"
-        f"👉 https://t.me/{bot_username}?start={user_id}\n\n"
+        f"👉 {personal_link}\n\n"
         "Разместите эту ссылку ☝️ в описании своего профиля "
         "Telegram, TikTok, Instagram (stories), чтобы вам могли написать 💬"
     )
@@ -75,16 +78,9 @@ def cancel(message):
     )
 
 
-# ================= ПРИЁМ ВСЕХ ТИПОВ СООБЩЕНИЙ =================
+# ================= ПРИЁМ ВСЕХ ТИПОВ =================
 @bot.message_handler(
-    content_types=[
-        'text',
-        'photo',
-        'video',
-        'voice',
-        'video_note',
-        'sticker'
-    ]
+    content_types=['text','photo','video','voice','video_note','sticker']
 )
 def receive_all(message):
     user_id = message.from_user.id
@@ -94,7 +90,6 @@ def receive_all(message):
 
     target_id = waiting_for_message.pop(user_id)
 
-    # Отправляем полностью анонимно
     bot.copy_message(
         chat_id=target_id,
         from_chat_id=message.chat.id,
@@ -108,6 +103,21 @@ def receive_all(message):
     )
 
 
-# ================= ЗАПУСК =================
-bot.remove_webhook()
-bot.infinity_polling()
+# ================= WEBHOOK =================
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    json_str = request.get_data().decode("UTF-8")
+    update = telebot.types.Update.de_json(json_str)
+    bot.process_new_updates([update])
+    return "OK", 200
+
+
+@app.route("/")
+def index():
+    return "Bot is running!"
+
+
+if __name__ == "__main__":
+    bot.remove_webhook()
+    bot.set_webhook(url=f"{os.getenv('RAILWAY_STATIC_URL')}/{TOKEN}")
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
