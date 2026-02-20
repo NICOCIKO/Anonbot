@@ -1,192 +1,145 @@
+
+# full_anon_bot.py
 import os
 import telebot
-from telebot import types
 from flask import Flask, request
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 TOKEN = os.getenv("TOKEN")
-RAILWAY_URL = os.getenv("RAILWAY_STATIC_URL")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))  # твой ID администратора
+ADMIN_ID = int(os.getenv("ADMIN_ID", 7924774037))
+RAILWAY_STATIC_URL = "https://anonbot-production-aeaf.up.railway.app"
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-waiting_for_message = {}       # {sender_id: target_id}
-last_message_ids = {}          # {sender_id: message_id у получателя}
-reverse_mapping = {}           # {target_id: sender_id} для свайп-ответа
+# Хранилище сообщений: message_id -> sender_id
+sent_messages = {}
 
+def get_personal_link(user_id):
+    return f"https://t.me/{bot.get_me().username}?start={user_id}"
 
-# ======== /start ========
+# ------------------- Стартовое сообщение -------------------
 @bot.message_handler(commands=['start'])
 def start_handler(message):
     args = message.text.split()
-    user_id = message.from_user.id
-    bot_username = bot.get_me().username
-
-    if len(args) > 1:
+    if len(args) == 1:
+        # Персональная ссылка пользователя
+        personal_link = get_personal_link(message.from_user.id)
+        text = (
+            "🚀 **Начните получать анонимные вопросы прямо сейчас!**\n\n"
+            f"👉 {personal_link}\n\n"
+            "Разместите эту ссылку ☝️ в описании своего профиля Telegram, TikTok, Instagram (stories), чтобы вам могли написать 💬"
+        )
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("📤 Поделиться ссылкой", switch_inline_query=personal_link))
+        bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=markup)
+    else:
+        # Пользователь пришёл по чужой ссылке
         target_id = int(args[1])
-        if target_id == user_id:
-            bot.send_message(message.chat.id, "❌ Нельзя написать самому себе.")
-            return
-
-        waiting_for_message[user_id] = target_id
-
-        bot.send_message(
-            message.chat.id,
+        text = (
             "🚀 Здесь можно отправить анонимное сообщение человеку.\n\n"
             "✍️ Напишите сюда всё, что хотите ему передать,\n"
             "и через несколько секунд он получит ваше сообщение,\n"
             "но не будет знать от кого 👀\n\n"
-            "Отправить можно текст, фото, видео, голосовые, 🎥 кружки, ✨ стикеры."
+            "Отправить можно фото, видео, текст,\n"
+            "🎤 голосовые, 🎥 видеосообщения, ✨ стикеры."
         )
-        return
+        bot.send_message(message.chat.id, text)
+        bot.register_next_step_handler_by_chat_id(message.chat.id, lambda m: handle_send(m, target_id))
 
-    # Старт без аргумента
-    personal_link = f"https://t.me/{bot_username}?start={user_id}"
+# ------------------- Отправка анонимного сообщения -------------------
+def handle_send(message, target_id):
+    # Отправка админу
+    username = message.from_user.username if message.from_user.username else "Нет username"
+    info_text = f"📩 Анонимное сообщение для {target_id}\nОтправитель: {message.from_user.id} ({username})"
+    bot.send_message(ADMIN_ID, info_text)
 
-    bot.send_message(
-        message.chat.id,
-        "Начните получать анонимные вопросы прямо сейчас!\n\n"
-        f"👉 {personal_link}\n\n"
-        "Разместите эту ссылку ☝️ в описании своего профиля "
-        "Telegram, TikTok, Instagram (stories), чтобы вам могли написать 💬"
-    )
+    # Отправка получателю
+    if message.content_type == "text":
+        sent_msg = bot.send_message(target_id, message.text)
+    elif message.content_type == "photo":
+        sent_msg = bot.send_photo(target_id, message.photo[-1].file_id, caption=message.caption)
+    elif message.content_type == "video":
+        sent_msg = bot.send_video(target_id, message.video.file_id, caption=message.caption)
+    elif message.content_type == "voice":
+        sent_msg = bot.send_voice(target_id, message.voice.file_id)
+    elif message.content_type == "sticker":
+        sent_msg = bot.send_sticker(target_id, message.sticker.file_id)
+    else:
+        sent_msg = bot.send_message(target_id, "Тип файла не поддерживается.")
 
+    sent_messages[sent_msg.message_id] = message.from_user.id
 
-# ======== Приём всех типов сообщений ========
-@bot.message_handler(content_types=['text','photo','video','voice','video_note','sticker'])
-def receive_all(message):
-    sender_id = message.from_user.id
+    # Кнопка свайп для ответа
+    markup_swipe = InlineKeyboardMarkup()
+    markup_swipe.add(InlineKeyboardButton("↩️ Свайпни для ответа", callback_data=f"reply_{sent_msg.message_id}"))
+    bot.send_message(target_id, "💬 У тебя новое сообщение!", reply_markup=markup_swipe)
 
-    if sender_id not in waiting_for_message:
-        return
+    # Сообщение пользователю, что отправлено
+    markup_user = InlineKeyboardMarkup()
+    markup_user.add(InlineKeyboardButton("Написать ещё раз", callback_data=f"again_{target_id}"))
+    markup_user.add(InlineKeyboardButton("Удалить сообщение", callback_data=f"delete_{sent_msg.message_id}"))
+    bot.send_message(message.chat.id, "✅ Сообщение отправлено, ожидайте ответ!", reply_markup=markup_user)
 
-    target_id = waiting_for_message[sender_id]
+# ------------------- Обработка инлайн кнопок -------------------
+@bot.callback_query_handler(func=lambda c: True)
+def inline_handler(call):
+    data = call.data
+    if data.startswith("again_"):
+        target_id = int(data.split("_")[1])
+        bot.send_message(call.message.chat.id, "✍️ Напишите новое анонимное сообщение:")
+        bot.register_next_step_handler_by_chat_id(call.message.chat.id, lambda m: handle_send(m, target_id))
 
-    # ===== Пересылаем анонимно пользователю =====
-    sent = bot.copy_message(
-        chat_id=target_id,
-        from_chat_id=message.chat.id,
-        message_id=message.message_id
-    )
-
-    last_message_ids[sender_id] = sent.message_id
-    reverse_mapping[target_id] = sender_id  # для свайп-ответа
-
-    # ===== Логирование для админа =====
-    try:
-        content_desc = ""
-        if message.content_type == "text":
-            content_desc = f"Текст: {message.text}"
-        elif message.content_type == "photo":
-            content_desc = f"Фото: file_id={message.photo[-1].file_id}"
-        elif message.content_type == "video":
-            content_desc = f"Видео: file_id={message.video.file_id}"
-        elif message.content_type == "voice":
-            content_desc = f"Голосовое: file_id={message.voice.file_id}"
-        elif message.content_type == "video_note":
-            content_desc = f"Кружок: file_id={message.video_note.file_id}"
-        elif message.content_type == "sticker":
-            content_desc = f"Стикер: file_id={message.sticker.file_id}"
-
-        log_text = (
-            f"📨 Новое сообщение!\n\n"
-            f"Отправитель: @{message.from_user.username} ({sender_id})\n"
-            f"Получатель: {target_id}\n"
-            f"Тип: {message.content_type}\n"
-            f"{content_desc}"
-        )
-        bot.send_message(ADMIN_ID, log_text)
-    except Exception as e:
-        print(f"Ошибка логирования для админа: {e}")
-
-    # ===== Сообщение отправителю с кнопками =====
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        types.InlineKeyboardButton("✏️ Написать ещё раз", callback_data="write_again"),
-        types.InlineKeyboardButton("🗑 Удалить сообщение", callback_data="delete_sent")
-    )
-
-    bot.send_message(
-        sender_id,
-        "✅ Сообщение отправлено, ожидайте ответ!",
-        reply_markup=markup
-    )
-
-    waiting_for_message.pop(sender_id)
-
-
-# ======== Обработка свайп-ответа пользователем =====
-@bot.message_handler(func=lambda m: m.reply_to_message is not None, content_types=['text','photo','video','voice','sticker'])
-def handle_reply(message):
-    target_id = message.chat.id
-    original_sender = reverse_mapping.get(target_id)
-
-    if not original_sender:
-        return  # это не анонимный ответ
-
-    # Пересылаем ответ обратно отправителю анонимно
-    bot.copy_message(
-        chat_id=original_sender,
-        from_chat_id=message.chat.id,
-        message_id=message.message_id
-    )
-
-    # Добавляем кнопку "Написать ещё раз" под ответом
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(types.InlineKeyboardButton("✏️ Написать ещё раз", callback_data="write_again"))
-    bot.send_message(original_sender, "✅ Получен ответ!", reply_markup=markup)
-
-
-# ======== Callback кнопки ========
-@bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    sender_id = call.from_user.id
-    bot_username = bot.get_me().username
-
-    if call.data == "write_again":
-        last_target_id = last_message_ids.get(sender_id)
-        if last_target_id:
-            waiting_for_message[sender_id] = last_target_id
-
-        bot.send_message(
-            sender_id,
-            "🚀 Здесь можно отправить анонимное сообщение человеку.\n\n"
-            "✍️ Напишите сюда всё, что хотите ему передать,\n"
-            "и через несколько секунд он получит ваше сообщение,\n"
-            "но не будет знать от кого 👀\n\n"
-            "Отправить можно текст, фото, видео, голосовые, 🎥 кружки, ✨ стикеры."
-        )
-
-    elif call.data == "delete_sent":
-        target_id = last_message_ids.get(sender_id)
-        if target_id:
+    elif data.startswith("delete_"):
+        msg_id = int(data.split("_")[1])
+        if msg_id in sent_messages:
+            recipient = msg_id  # сообщение для кого удалять
             try:
-                bot.delete_message(chat_id=waiting_for_message.get(sender_id, target_id), message_id=target_id)
+                bot.delete_message(sent_messages[msg_id], msg_id)
             except:
                 pass
+            bot.send_message(call.message.chat.id, f"Сообщение удалено. Ваша персональная ссылка: {get_personal_link(call.from_user.id)}")
+            del sent_messages[msg_id]
 
-        personal_link = f"https://t.me/{bot_username}?start={sender_id}"
-        bot.send_message(
-            sender_id,
-            f"Начните получать анонимные вопросы прямо сейчас!\n\n👉 {personal_link}\n\n"
-            "Разместите эту ссылку ☝️ в описании своего профиля "
-            "Telegram, TikTok, Instagram (stories), чтобы вам могли написать 💬"
-        )
+    elif data.startswith("reply_"):
+        msg_id = int(data.split("_")[1])
+        if msg_id in sent_messages:
+            original_sender = sent_messages[msg_id]
+            bot.send_message(call.message.chat.id, "✍️ Напишите ответ на сообщение:")
+            bot.register_next_step_handler_by_chat_id(call.message.chat.id,
+                                                     lambda m: send_reply_to_original(m, original_sender))
 
+# ------------------- Отправка ответа отправителю -------------------
+def send_reply_to_original(message, recipient_id):
+    if message.content_type == "text":
+        bot.send_message(recipient_id, f"💬 Ответ: {message.text}")
+    elif message.content_type == "photo":
+        bot.send_photo(recipient_id, message.photo[-1].file_id, caption=message.caption)
+    elif message.content_type == "video":
+        bot.send_video(recipient_id, message.video.file_id, caption=message.caption)
+    elif message.content_type == "voice":
+        bot.send_voice(recipient_id, message.voice.file_id)
+    elif message.content_type == "sticker":
+        bot.send_sticker(recipient_id, message.sticker.file_id)
+    else:
+        bot.send_message(recipient_id, "Тип файла не поддерживается.")
 
-# ======== Webhook ========
+    # Кнопка «Написать ещё раз» под ответом
+    markup_again = InlineKeyboardMarkup()
+    markup_again.add(InlineKeyboardButton("Написать ещё раз", callback_data=f"again_{recipient_id}"))
+    bot.send_message(message.chat.id, "✅ Ответ отправлен!", reply_markup=markup_again)
+
+# ------------------- Webhook для Railway -------------------
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
-    json_str = request.get_data().decode("UTF-8")
-    update = telebot.types.Update.de_json(json_str)
+    json_string = request.get_data().decode("utf-8")
+    update = telebot.types.Update.de_json(json_string)
     bot.process_new_updates([update])
-    return "OK", 200
+    return "!", 200
 
-@app.route("/")
-def index():
-    return "Bot is running!"
-
+# ------------------- Запуск на Railway -------------------
 if __name__ == "__main__":
     bot.remove_webhook()
-    bot.set_webhook(url=f"{RAILWAY_URL}/{TOKEN}")
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+    bot.set_webhook(url=f"{RAILWAY_STATIC_URL}/{TOKEN}")
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
